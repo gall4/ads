@@ -8,18 +8,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg: #FAF6EF;
-    --bg-soft: #F3ECDF;
+    --bg: #F5F8F8;
+    --bg-soft: #EAF2F0;
     --card: #FFFFFF;
-    --ink: #2C2721;
-    --ink-soft: #746A5C;
-    --line: #EAE1D0;
-    --accent: #5D6EA6;
-    --accent-deep: #46527A;
-    --sage: #7E9473;
-    --danger: #B5563E;
+    --ink: #16204A;
+    --ink-soft: #6B7390;
+    --line: #E1E8EA;
+    --accent: #16204A;
+    --accent-deep: #0D1530;
+    --teal: #2ED9A8;
+    --sage: #22B893;
+    --danger: #D6524B;
     --radius: 18px;
-    --shadow: 0 1px 2px rgba(44,39,33,0.04), 0 8px 24px -12px rgba(44,39,33,0.12);
+    --shadow: 0 1px 2px rgba(22,32,74,0.05), 0 8px 24px -12px rgba(22,32,74,0.14);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -31,7 +32,7 @@
   }
   .bg-horizon{
     position:fixed; top:0; left:0; right:0; height:340px;
-    background: radial-gradient(120% 100% at 50% -20%, #FFF9EE 0%, var(--bg) 70%);
+    background: radial-gradient(120% 100% at 50% -20%, #E4F7F1 0%, var(--bg) 70%);
     pointer-events:none; z-index:0;
   }
   header{
@@ -41,7 +42,7 @@
   }
   header .eyebrow{
     font-size:12px; letter-spacing:.16em; text-transform:uppercase;
-    color: var(--accent-deep); font-weight:700; margin-bottom:10px;
+    color: var(--sage); font-weight:700; margin-bottom:10px;
   }
   header h1{
     font-family:'Fraunces', serif;
@@ -66,10 +67,10 @@
     background: var(--accent);
     color:#fff; font-weight:700; font-size:14px;
     padding:13px 24px; border-radius:999px;
-    box-shadow: 0 6px 18px -6px rgba(93,110,166,0.45);
+    box-shadow: 0 6px 18px -6px rgba(22,32,74,0.4);
     transition: transform .15s ease, box-shadow .15s ease;
   }
-  .btn-primary:hover{ transform: translateY(-1px); box-shadow: 0 10px 22px -6px rgba(93,110,166,0.5);}
+  .btn-primary:hover{ transform: translateY(-1px); box-shadow: 0 10px 22px -6px rgba(22,32,74,0.45);}
   .btn-ghost{
     background: transparent; color: var(--ink-soft); font-weight:600; font-size:13px;
     padding:13px 16px; border-radius:999px; border:1px solid var(--line);
@@ -77,7 +78,7 @@
   .btn-ghost:hover{ background: var(--bg-soft); }
   .admin-pill{
     display:inline-block; margin-top:14px; font-size:11px; font-weight:700;
-    color: var(--sage); background:#EEF3EA; border:1px solid #D8E4D1;
+    color: var(--sage); background:#E4F7F1; border:1px solid #C3EEE0;
     padding:5px 12px; border-radius:999px; letter-spacing:.03em;
     cursor:pointer;
   }
@@ -398,7 +399,37 @@
     });
   });
 
+  const POST_LIMIT = 2;
+  const POST_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+  function getPostTimes(){
+    try { return JSON.parse(localStorage.getItem('kuvandyk_post_times') || '[]'); }
+    catch(e) { return []; }
+  }
+  function recentPostTimes(){
+    const cutoff = Date.now() - POST_WINDOW_MS;
+    return getPostTimes().filter(t => t > cutoff);
+  }
+  function canPost(){
+    return recentPostTimes().length < POST_LIMIT;
+  }
+  function hoursUntilNextSlot(){
+    const times = recentPostTimes().sort((a, b) => a - b);
+    const oldest = times[0];
+    const msLeft = (oldest + POST_WINDOW_MS) - Date.now();
+    return Math.max(1, Math.ceil(msLeft / (60 * 60 * 1000)));
+  }
+  function recordPost(){
+    const times = recentPostTimes();
+    times.push(Date.now());
+    localStorage.setItem('kuvandyk_post_times', JSON.stringify(times));
+  }
+
   openForm.addEventListener('click', () => {
+    if (!canPost()) {
+      alert('Лимит объявлений исчерпан: можно опубликовать не больше 2 за 24 часа. Следующее объявление будет доступно через ' + hoursUntilNextSlot() + ' ч.');
+      return;
+    }
     formErr.style.display = 'none';
     document.getElementById('adName').value = '';
     document.getElementById('adText').value = '';
@@ -424,6 +455,7 @@
     if (text.length > 350) { showErr('Текст длиннее 350 символов'); return; }
     if (!vk || !/vk\.com\//i.test(vk)) { showErr('Укажите корректную ссылку на ВК (vk.com/...)'); return; }
     if (!firebaseReady) { showErr('Firebase не настроен — объявление не будет видно другим'); return; }
+    if (!canPost()) { showErr('Лимит 2 объявления за 24 часа исчерпан. Следующее — через ' + hoursUntilNextSlot() + ' ч.'); return; }
 
     submitForm.disabled = true;
     submitForm.textContent = 'Публикуем…';
@@ -437,6 +469,7 @@
         setTimeout(() => reject(new Error('timeout')), 15000)
       );
       await Promise.race([writePromise, timeoutPromise]);
+      recordPost();
       overlay.classList.remove('open');
     } catch (e) {
       if (e && e.message === 'timeout') {
