@@ -202,8 +202,13 @@
     <h2>Новое объявление</h2>
     <p class="sub">Объявление будет видно 5 дней, затем исчезнет само</p>
     <div class="field">
+      <label for="adName">Имя Фамилия</label>
+      <input id="adName" type="text" placeholder="Как к вам обращаться">
+    </div>
+    <div class="field">
       <label for="adText">Текст объявления</label>
-      <textarea id="adText" rows="4" maxlength="600" placeholder="Что хотите продать, купить или сообщить?"></textarea>
+      <textarea id="adText" rows="4" maxlength="350" placeholder="Что хотите продать, купить или сообщить?"></textarea>
+      <div class="hint" id="charCount">0 / 350</div>
     </div>
     <div class="field">
       <label for="adVk">Ссылка на профиль ВКонтакте</label>
@@ -214,6 +219,12 @@
       <label for="adPhone">Телефон (необязательно)</label>
       <input id="adPhone" type="text" placeholder="+7 900 000-00-00">
     </div>
+    <div class="field">
+      <label for="adPhotos">Фото (до 6 штук, необязательно)</label>
+      <input id="adPhotos" type="file" accept="image/*" multiple>
+      <div class="hint" id="photoHint">На доске фото не видно — появится в карточке при открытии объявления</div>
+      <div id="photoPreview" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"></div>
+    </div>
     <div class="err" id="formErr"></div>
     <div class="modal-actions">
       <button class="cancel" id="cancelForm">Отмена</button>
@@ -222,7 +233,26 @@
   </div>
 </div>
 
+<div class="overlay" id="detailOverlay">
+  <div class="modal" id="detailModal" style="max-width:560px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+      <h2 id="detailName" style="margin:0;">Имя</h2>
+      <button class="cancel" id="closeDetail" style="flex:none; padding:8px 14px; border-radius:10px;">Закрыть</button>
+    </div>
+    <div class="time" id="detailTime" style="margin-bottom:16px;"></div>
+    <p class="card-text" id="detailText" style="font-size:15px;"></p>
+    <div id="detailPhotos" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0;"></div>
+    <div class="card-meta" style="border-top:1px solid var(--line); padding-top:14px;">
+      <div class="who">
+        <a id="detailVk" href="#" target="_blank" rel="noopener noreferrer">ВКонтакте →</a>
+        <div class="phone" id="detailPhone"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
+
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
     getFirestore, collection, addDoc, deleteDoc, doc,
@@ -308,22 +338,82 @@
     }
   });
 
+  const adText = document.getElementById('adText');
+  const charCount = document.getElementById('charCount');
+  const adPhotosInput = document.getElementById('adPhotos');
+  const photoPreview = document.getElementById('photoPreview');
+  let selectedPhotos = []; // base64 strings
+
+  adText.addEventListener('input', () => {
+    charCount.textContent = adText.value.length + ' / 350';
+  });
+
+  function resizeImageToBase64(file, maxDim, quality){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => { img.src = e.target.result; };
+      reader.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  adPhotosInput.addEventListener('change', async () => {
+    const files = Array.from(adPhotosInput.files).slice(0, 6);
+    if (adPhotosInput.files.length > 6) {
+      showErr('Максимум 6 фото — взяты первые 6');
+    }
+    photoPreview.innerHTML = '<div class="hint">Обрабатываем фото…</div>';
+    selectedPhotos = [];
+    for (const file of files) {
+      try {
+        const base64 = await resizeImageToBase64(file, 900, 0.55);
+        selectedPhotos.push(base64);
+      } catch (e) { /* skip broken file */ }
+    }
+    photoPreview.innerHTML = '';
+    selectedPhotos.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);';
+      photoPreview.appendChild(img);
+    });
+  });
+
   openForm.addEventListener('click', () => {
     formErr.style.display = 'none';
+    document.getElementById('adName').value = '';
     document.getElementById('adText').value = '';
     document.getElementById('adVk').value = '';
     document.getElementById('adPhone').value = '';
+    adPhotosInput.value = '';
+    photoPreview.innerHTML = '';
+    selectedPhotos = [];
+    charCount.textContent = '0 / 350';
     overlay.classList.add('open');
   });
   cancelForm.addEventListener('click', () => overlay.classList.remove('open'));
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
 
   submitForm.addEventListener('click', async () => {
+    const name = document.getElementById('adName').value.trim();
     const text = document.getElementById('adText').value.trim();
     const vk = document.getElementById('adVk').value.trim();
     const phone = document.getElementById('adPhone').value.trim();
 
+    if (!name) { showErr('Укажите имя и фамилию'); return; }
     if (!text) { showErr('Напишите текст объявления'); return; }
+    if (text.length > 350) { showErr('Текст длиннее 350 символов'); return; }
     if (!vk || !/vk\.com\//i.test(vk)) { showErr('Укажите корректную ссылку на ВК (vk.com/...)'); return; }
     if (!firebaseReady) { showErr('Firebase не настроен — объявление не будет видно другим'); return; }
 
@@ -331,19 +421,22 @@
     submitForm.textContent = 'Публикуем…';
     try {
       const writePromise = addDoc(collection(db, 'ads'), {
-        text, vk, phone,
+        name, text, vk, phone,
+        photos: selectedPhotos,
         createdAt: serverTimestamp()
       });
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 10000)
+        setTimeout(() => reject(new Error('timeout')), 15000)
       );
       await Promise.race([writePromise, timeoutPromise]);
       overlay.classList.remove('open');
     } catch (e) {
       if (e && e.message === 'timeout') {
-        showErr('Не получилось опубликовать за 10 секунд. Проверьте, что в Firebase создана база Firestore (не Realtime Database) и настроены Rules.');
+        showErr('Не получилось опубликовать за 15 секунд. Проверьте, что в Firebase создана база Firestore (не Realtime Database) и настроены Rules.');
       } else if (e && e.code === 'permission-denied') {
         showErr('База отклонила запись — проверьте Rules в Firestore.');
+      } else if (e && e.code === 'invalid-argument') {
+        showErr('Слишком много/тяжёлых фото. Попробуйте убрать одно-два.');
       } else {
         showErr('Не получилось опубликовать. Попробуйте ещё раз.');
       }
@@ -386,6 +479,15 @@
     visible.forEach(ad => {
       const card = document.createElement('div');
       card.className = 'card';
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', () => openDetail(ad));
+
+      if (ad.name) {
+        const nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-weight:700; font-size:13px; color:var(--accent-deep); margin-bottom:6px;';
+        nameEl.textContent = ad.name;
+        card.appendChild(nameEl);
+      }
 
       const p = document.createElement('p');
       p.className = 'card-text';
@@ -402,6 +504,7 @@
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.textContent = 'ВКонтакте →';
+      a.addEventListener('click', (e) => e.stopPropagation());
       who.appendChild(a);
       const time = document.createElement('div');
       time.className = 'time';
@@ -415,11 +518,19 @@
       }
       meta.appendChild(who);
 
+      if (ad.photos && ad.photos.length) {
+        const badge = document.createElement('div');
+        badge.style.cssText = 'font-size:11px; color:var(--ink-soft); font-weight:700;';
+        badge.textContent = '📷 ' + ad.photos.length;
+        meta.appendChild(badge);
+      }
+
       if (adminMode) {
         const del = document.createElement('button');
         del.className = 'card-del';
         del.textContent = 'Удалить';
-        del.addEventListener('click', async () => {
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
           if (!confirm('Удалить это объявление?')) return;
           try { await deleteDoc(doc(db, 'ads', ad.id)); }
           catch(e) { alert('Не удалось удалить'); }
@@ -432,6 +543,34 @@
     });
   }
 
+  const detailOverlay = document.getElementById('detailOverlay');
+  const closeDetail = document.getElementById('closeDetail');
+  const detailName = document.getElementById('detailName');
+  const detailTime = document.getElementById('detailTime');
+  const detailText = document.getElementById('detailText');
+  const detailPhotos = document.getElementById('detailPhotos');
+  const detailVk = document.getElementById('detailVk');
+  const detailPhone = document.getElementById('detailPhone');
+
+  function openDetail(ad){
+    detailName.textContent = ad.name || 'Без имени';
+    detailTime.textContent = ad.createdAtMs ? timeAgo(new Date(ad.createdAtMs)) : '';
+    detailText.textContent = ad.text;
+    detailVk.href = normalizeVk(ad.vk);
+    detailPhone.textContent = ad.phone || '';
+    detailPhotos.innerHTML = '';
+    (ad.photos || []).forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:zoom-in;';
+      img.addEventListener('click', () => window.open(src, '_blank'));
+      detailPhotos.appendChild(img);
+    });
+    detailOverlay.classList.add('open');
+  }
+  closeDetail.addEventListener('click', () => detailOverlay.classList.remove('open'));
+  detailOverlay.addEventListener('click', (e) => { if (e.target === detailOverlay) detailOverlay.classList.remove('open'); });
+
   if (firebaseReady) {
     const q = query(collection(db, 'ads'), orderBy('createdAt', 'desc'));
     onSnapshot(q, (snap) => {
@@ -439,9 +578,11 @@
         const data = d.data();
         return {
           id: d.id,
+          name: data.name,
           text: data.text,
           vk: data.vk,
           phone: data.phone,
+          photos: data.photos || [],
           createdAtMs: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now()
         };
       });
