@@ -136,6 +136,17 @@
     text-align:center; color: var(--ink-soft); padding: 60px 20px; font-size:14px;
   }
 
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px);
+    background: var(--ink); color:#fff; padding:14px 20px; border-radius:14px;
+    font-size:13px; line-height:1.5; max-width:min(90vw, 380px);
+    box-shadow: 0 12px 32px -8px rgba(13,21,48,0.4);
+    z-index:50; opacity:0; pointer-events:none;
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+  .toast strong{ color: var(--teal); }
+
   /* modal */
   .overlay{
     position:fixed; inset:0; background: rgba(44,39,33,0.35);
@@ -192,6 +203,7 @@
 </header>
 
 <div class="status-banner" id="statusBanner"></div>
+<div class="toast" id="toast"></div>
 
 <main>
   <div class="feed" id="feed"></div>
@@ -286,6 +298,15 @@
 
   const EXPIRY_DAYS = 5;
   const statusBanner = document.getElementById('statusBanner');
+  const toast = document.getElementById('toast');
+  let toastTimer = null;
+
+  function showToast(html){
+    toast.innerHTML = html;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 4500);
+  }
 
   let db;
   let firebaseReady = false;
@@ -342,7 +363,7 @@
         updateAdminUI();
         render(currentAds);
       } else if (pass !== null) {
-        alert('Неверный пароль');
+        showToast('Неверный пароль');
       }
     }
   });
@@ -427,7 +448,7 @@
 
   openForm.addEventListener('click', () => {
     if (!canPost()) {
-      alert('Лимит объявлений исчерпан: можно опубликовать не больше 2 за 24 часа. Следующее объявление будет доступно через ' + hoursUntilNextSlot() + ' ч.');
+      showToast('<strong>Лимит объявлений исчерпан.</strong><br>Можно опубликовать не больше 2 объявлений за 24 часа. Следующее будет доступно через ' + hoursUntilNextSlot() + ' ч.');
       return;
     }
     formErr.style.display = 'none';
@@ -574,7 +595,7 @@
           e.stopPropagation();
           if (!confirm('Удалить это объявление?')) return;
           try { await deleteDoc(doc(db, 'ads', ad.id)); }
-          catch(e) { alert('Не удалось удалить'); }
+          catch(e) { showToast('Не удалось удалить'); }
         });
         meta.appendChild(del);
       }
